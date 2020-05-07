@@ -7,14 +7,12 @@ import psycopg2
 from postgis import Polygon,MultiPolygon
 from postgis.psycopg import register
 import time
+import csv
 
 INFECTED=.2 #codigo da cor vermelha para a animacao. pareceu-me mais facil atribuir directamente a cor em vez dum valor booleano.
 NOT_INFECTED=.3 #codigo da cor verde
 SAVE_CSV=False
-
-#def get_row(initial_timestamp, timestamp, step):
-#    return float(timestamp-initial_timestamp)/step
-    
+   
 def dist(point1, point2):
     x1,y1=int(point1[0]),int(point1[1])
     x2,y2=int(point2[0]),int(point2[1])
@@ -30,25 +28,57 @@ def query_database(query, cursor_psql):
     cursor_psql.execute(query)
     return cursor_psql.fetchall()
 
-def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV):
+def get_taxis(n,array):
+    query='''select distrito, st_xmin(pol) as xmin, st_xmax(pol) as xmax, st_ymin(pol) as ymin, st_ymax(pol) as ymax from ( select distrito, st_union(proj_boundary) as pol from cont_aad_caop2018 where distrito='PORTO' OR distrito='LISBOA' group by distrito ) as foo'''
+    
+    x_max_porto=21587.802799999714
+    y_max_porto=200494.2405999992
+    x_min_porto=-54840.610100000165
+    y_min_porto=148062.88130000047
+        
+    x_max_lisboa= -56153.14389999956
+    y_max_lisboa=-38316.6501000002
+    x_min_lisboa=-118821.75310000032
+    y_min_lisboa=-109803.14460000023 
+
+    taxis_porto=[]
+    taxis_lisboa=[]
+    added=[]
+    
+    for r in range(0,len(array)):
+        for c in range(0,len(array[r])):
+            taxi_x=array[r][c][0]
+            taxi_y=array[r][c][1]
+            if(len(taxis_porto)<n and x_min_porto<=taxi_x<=x_max_porto and y_min_porto<=taxi_y<=y_max_porto):
+                if(c not in added):
+                    taxis_porto.append([r,c])
+                    added.append(c)
+            if(len(taxis_lisboa)<n and x_min_lisboa<=taxi_x<=x_max_lisboa and y_min_lisboa<=taxi_y<=y_max_lisboa):
+                if(c not in added):
+                    taxis_lisboa.append([r,c])
+                    added.append(c)
+            if(len(taxis_porto)==10 and len(taxis_lisboa)==10):
+                del added
+                return (taxis_porto, taxis_lisboa)                
+    del added
+    return (taxis_porto, taxis_lisboa)
+        
+def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV=True):
+    
     n_rows = len(array) #number of timestamps
     n_cols = len(array[0]) #number of taxis
-
-    infected = numpy.full((n_rows, n_cols), NOT_INFECTED)   
+    
+    infected = numpy.full((n_rows, n_cols), NOT_INFECTED)
     step=10
 
-    #tirar 1 aleatoriamente em lisboa e no porto
-    pos_first10_taxis_porto=[[3, 161], [3, 187], [4, 161], [4, 187], [4, 247], [5, 161], [5, 187], [5, 247], [5, 978], [6, 161]]
-    pos_first10_taxis_lisboa=[[1, 836], [1, 1163], [2, 836], [2, 1163], [2, 1285], [2, 1564], [3, 836], [3, 1163], [3, 1285], [3, 1564]]
-
+    first_10_taxis_porto, first_10_taxis_lisboa=get_taxis(10,array)
+                                  
     #escolher um taxi aleatorio do porto e outro de lisboa
     random_index=random.randint(0,9)
-    porto = pos_first10_taxis_porto[random_index] #[row,col]
-    lisboa= pos_first10_taxis_lisboa[random_index]
-#    print(porto)
-#    print(lisboa)
+    porto = first_10_taxis_porto[random_index]
+    lisboa= first_10_taxis_lisboa[random_index]
 
-    #marca os 2 taxis escolhidos como infectados para todos os timestamps a partir do timestamp em que começaram a circular
+    #marca os 2 taxis escolhidos como infectados para todos os timestamps a partir do timestamp em que comecaram a circular
     infected[porto[0]][porto[1]]=INFECTED
     for row in range(porto[0],n_rows):
         infected[row][porto[1]]=INFECTED
@@ -59,25 +89,46 @@ def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV):
 
     for row in range(0,n_rows):
         starttime=time.time()
-        for n_col1,n_col2 in it.combinations(range(0,n_cols),2): #comparar todos os pares diferentes de colunas(taxis)
-            INFECT=False
-            
-            random_value= random.randint(1,10)
-            for i in range(0,step):
-                if (random_value==1):
-                    INFECT=True
-                    break
 
-            if (INFECT):
-                if(dist(array[row][n_col1],array[row][n_col2])<=50):
-                    if(infected[row][n_col1]==INFECTED and infected[row][n_col2]==NOT_INFECTED): #se o primeiro estiver infectado e o segundo nao, infectar o segundo
-                        for r in range(row,n_rows):
-                            infected[r][n_col2]=INFECTED
-                    if(infected[row][n_col2]==INFECTED and infected[row][n_col1]==NOT_INFECTED): #se o segundo estiver infectado e o segundo nao, infectar o segundo
-                        for r in range(row,n_rows):
-                            infected[r][n_col1]=INFECTED
+        for n_col1 in range(0,n_cols-1):
+
+            COL1_INFECTED=False
+            if(infected[row][n_col1]==INFECTED):
+                COL1_INFECTED=True
+                
+            if(int(array[row][n_col1][0])==0): #se o taxi1 tiver coordenadas 0 0, significa que nao esta activo, e nao vai ser considerado
+                continue        
+            for n_col2 in range(n_col1+1,n_cols):
+                if(int(array[row][n_col2][0])==0): #se o taxi2 tiver coordenadas 0 0, tambem nao vai ser considerado
+                    continue
+
+                COL2_INFECTED=False
+                if(infected[row][n_col2]==INFECTED):
+                    COL2_INFECTED=True
+            
+                if(not COL1_INFECTED and not COL2_INFECTED): #se nenhum dos dois taxis esta infectado, nenhum vai infectar o outro, podemos passar para o proximo taxi
+                    continue
+                if(COL1_INFECTED and COL2_INFECTED): #se os dois ja estiverem infectados, tambem podemos avancar para o proximo
+                    continue
+                              
+                INFECT=False
+                if(random.randint(1,10)==1): #10% de probabilidade de haver infeccao em 10s.
+                    INFECT=True
+
+                if (INFECT):
+                    if(dist(array[row][n_col1],array[row][n_col2])<=50):
+                        if(COL1_INFECTED): #se o primeiro estiver infectado e o segundo nao, infectar o segundo
+                            if (not SAVE_CSV):
+                                print(array[row][n_col1][0], " " , array[row][n_col1][1], " ",array[row][n_col2][0], " ",array[row][n_col2][1])
+                            for r in range(row,n_rows):
+                                infected[r][n_col2]=INFECTED
+                        else:
+                            if (not SAVE_CSV):
+                                print(array[row][n_col1][0], " " , array[row][n_col1][1], " ",array[row][n_col2][0], " ",array[row][n_col2][1])
+                            for r in range(row,n_rows):
+                                infected[r][n_col1]=INFECTED
         if(not SAVE_CSV):
-            print('row %d took %d' % (row,time.time()-starttime))
+            print('row %d took %f' % (row,time.time()-starttime))
 
     if(SAVE_CSV):
         for row in infected:
@@ -87,3 +138,35 @@ def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV):
             print("")
 
     return infected
+
+def read_csv(csv_file):
+    array = []
+    with open(csv_file, 'r') as csvFile:
+        reader = csv.reader(csvFile)
+        i = 0
+        for row in reader:
+            l = []
+            for j in row:
+                l.append(float(j))
+            array.append(l)
+    return array
+
+
+def read_offsets():
+    offsets = []
+    with open('offsets3.csv', 'r') as csvFile:
+        reader = csv.reader(csvFile)
+        i = 0
+        for row in reader:
+            l = []
+            for j in row:
+                x,y = j.split()
+                x = float(x)
+                y= float(y)
+                l.append([x,y])
+            offsets.append(l)
+    x,y = [],[]
+    for i in offsets[0]:
+        x.append(i[0])
+        y.append(i[1])
+    return offsets

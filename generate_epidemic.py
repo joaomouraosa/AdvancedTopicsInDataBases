@@ -34,5 +34,3 @@ for i in offsets[0]:
 
 #criar a epidemia
 trab_functions.calculate_epidemic(offsets,ts_i,None, None, SAVE_CSV)
-
-
