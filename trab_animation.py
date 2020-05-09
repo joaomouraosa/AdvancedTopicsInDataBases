@@ -16,8 +16,14 @@ DEBUG=True
 
 def animate(i, color_data, scat):
     ax.set_title(datetime.datetime.utcfromtimestamp(ts_i+i*10))
+    ax2.plot(i,hist[i])
+#    ax3.plot(i,hist[i])
     scat.set_array(color_data[i])
     scat.set_offsets(offsets[i])
+
+    for j in range(0,i):
+        #update histograma
+
 
 scale=1/3000000
 DB_NAME='tracks'
@@ -40,8 +46,6 @@ ax.axis('off')
 ax.set(xlim=(xs_min, xs_max), ylim=(ys_min, ys_max))
 
 #cursor_psql = conn.cursor()
-
-
 
 sql = "select distrito,st_union(proj_boundary) from cont_aad_caop2018 group by distrito"
 
@@ -92,6 +96,10 @@ starttime=time.time()
 #infected = np.random.random((8640,1660))
 infected= trab_functions.read_csv('epidemic.csv')
 infected=np.array(infected)
+
+histogram_data=trab_functions.getHistogramData(infected)
+print(histogram_data)
+
 
 if DEBUG: print("part 2 took: %d" % (time.time()-starttime))
 starttime=time.time()

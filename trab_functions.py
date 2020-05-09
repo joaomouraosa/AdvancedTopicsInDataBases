@@ -1,6 +1,6 @@
 ### codigo com algumas funcoes auxiliares para a animacao
 import math
-import numpy
+import numpy as np
 import itertools as it
 import random
 import psycopg2
@@ -8,6 +8,7 @@ from postgis import Polygon,MultiPolygon
 from postgis.psycopg import register
 import time
 import csv
+import copy
 
 INFECTED=.2 #codigo da cor vermelha para a animacao. pareceu-me mais facil atribuir directamente a cor em vez dum valor booleano.
 NOT_INFECTED=.3 #codigo da cor verde
@@ -68,7 +69,7 @@ def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV=True):
     n_rows = len(array) #number of timestamps
     n_cols = len(array[0]) #number of taxis
     
-    infected = numpy.full((n_rows, n_cols), NOT_INFECTED)
+    infected = np.full((n_rows, n_cols), NOT_INFECTED)
     step=10
 
     first_10_taxis_porto, first_10_taxis_lisboa=get_taxis(10,array)
@@ -139,6 +140,34 @@ def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV=True):
 
     return infected
 
+def getHistogramData(array):
+    n_taxis = len(array[0])
+    hist={}
+    for n_row in range(0,len(array)):
+        hist[n_row]=0
+        for n_col in range(0,len(array[n_row])):
+            if(array[n_row][n_col]==INFECTED):
+                hist[n_row]+=1
+
+    histx = [[0,0],[0,0]]
+    histy = [[0,0],[0,0]]
+
+    for i in range(2,len(hist.keys())):
+        histx.append(histx[i-1] + [i])
+        histy.append (histy[i-1] + [hist[i]])
+
+    histy_ninf=copy.deepcopy(histy)
+
+    for i in range(0,len(histy)):
+        for j in range(0,len(histy[i])):
+            histy_ninf[i][j]=1600-histy[i][j]
+
+    histx=np.array(histx)
+    histy=np.array(histy)
+    histy_ninf=np.array(histy_ninf)
+    return (histx,histy,histy_ninf)
+                           
+
 def read_csv(csv_file):
     array = []
     with open(csv_file, 'r') as csvFile:
@@ -152,9 +181,9 @@ def read_csv(csv_file):
     return array
 
 
-def read_offsets():
+def read_offsets(file_name):
     offsets = []
-    with open('offsets3.csv', 'r') as csvFile:
+    with open(file_name, 'r') as csvFile:
         reader = csv.reader(csvFile)
         i = 0
         for row in reader:
@@ -170,3 +199,4 @@ def read_offsets():
         x.append(i[0])
         y.append(i[1])
     return offsets
+

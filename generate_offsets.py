@@ -10,8 +10,8 @@ from postgis.psycopg import register
 #define the step in seconds of the animation
 step = 10
 
-DB_NAME = 'public'
-DB_USER = 'joao'
+DB_NAME = 'tracks'
+DB_USER = 'nan'
 
 
 conn = psycopg2.connect("dbname=%s user=%s" % (DB_NAME,DB_USER))
