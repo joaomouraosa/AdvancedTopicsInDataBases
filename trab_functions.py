@@ -80,6 +80,8 @@ def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV=True):
     lisboa= first_10_taxis_lisboa[random_index]
 
     #marca os 2 taxis escolhidos como infectados para todos os timestamps a partir do timestamp em que comecaram a circular
+
+    
     infected[porto[0]][porto[1]]=INFECTED
     for row in range(porto[0],n_rows):
         infected[row][porto[1]]=INFECTED
@@ -106,7 +108,7 @@ def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV=True):
                 COL2_INFECTED=False
                 if(infected[row][n_col2]==INFECTED):
                     COL2_INFECTED=True
-            
+                    
                 if(not COL1_INFECTED and not COL2_INFECTED): #se nenhum dos dois taxis esta infectado, nenhum vai infectar o outro, podemos passar para o proximo taxi
                     continue
                 if(COL1_INFECTED and COL2_INFECTED): #se os dois ja estiverem infectados, tambem podemos avancar para o proximo
@@ -200,3 +202,16 @@ def read_offsets(file_name):
         y.append(i[1])
     return offsets
 
+
+
+
+"""
+def histogramas(array, ts_i,hora_i, hora_f):
+    ts_hora_i=ts_i+360*hora_i
+    ts_hora_f=ts_i+360*hora_f
+
+    for i in range(ts_hora_i,ts_hora_f):
+        for c in range(0,len(array[0])):
+            if c in distrito:
+                
+"""    
