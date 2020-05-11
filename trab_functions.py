@@ -30,17 +30,20 @@ def query_database(query, cursor_psql):
     return cursor_psql.fetchall()
 
 def get_taxis(n,array):
-    query='''select distrito, st_xmin(pol) as xmin, st_xmax(pol) as xmax, st_ymin(pol) as ymin, st_ymax(pol) as ymax from ( select distrito, st_union(proj_boundary) as pol from cont_aad_caop2018 where distrito='PORTO' OR distrito='LISBOA' group by distrito ) as foo'''
+    #query='''select distrito, st_xmin(pol) as xmin, st_xmax(pol) as xmax, st_ymin(pol) as ymin, st_ymax(pol) as ymax from ( select distrito, st_union(proj_boundary) as pol from cont_aad_caop2018 where distrito='PORTO' OR distrito='LISBOA' group by distrito ) as foo'''
     
-    x_max_porto=21587.802799999714
-    y_max_porto=200494.2405999992
-    x_min_porto=-54840.610100000165
-    y_min_porto=148062.88130000047
+    #x_max_porto=21587.802799999714
+    #y_max_porto=200494.2405999992
+    #x_min_porto=-54840.610100000165
+    #y_min_porto=148062.88130000047
         
-    x_max_lisboa= -56153.14389999956
-    y_max_lisboa=-38316.6501000002
-    x_min_lisboa=-118821.75310000032
-    y_min_lisboa=-109803.14460000023 
+    #x_max_lisboa= -56153.14389999956
+    #y_max_lisboa=-38316.6501000002
+    #x_min_lisboa=-118821.75310000032
+    #y_min_lisboa=-109803.14460000023 
+
+	queryPorto = (''' select distrito, st_within(%s, proj_boundary) from cont_aad_caop2018 where distrito = "PORTO" ''')
+	queryLisboa = (''' select distrito, st_within(%s, proj_boundary) from cont_aad_caop2018 where distrito = "PORTO" ''')
 
     taxis_porto=[]
     taxis_lisboa=[]
@@ -50,17 +53,29 @@ def get_taxis(n,array):
         for c in range(0,len(array[r])):
             taxi_x=array[r][c][0]
             taxi_y=array[r][c][1]
-            if(len(taxis_porto)<n and x_min_porto<=taxi_x<=x_max_porto and y_min_porto<=taxi_y<=y_max_porto):
-                if(c not in added):
-                    taxis_porto.append([r,c])
-                    added.append(c)
-            if(len(taxis_lisboa)<n and x_min_lisboa<=taxi_x<=x_max_lisboa and y_min_lisboa<=taxi_y<=y_max_lisboa):
-                if(c not in added):
-                    taxis_lisboa.append([r,c])
-                    added.append(c)
-            if(len(taxis_porto)==10 and len(taxis_lisboa)==10):
+			string_do_ponto="POINT(%d %d)" %(taxi_x, taxi_y)
+			if(queryPorto %string_do_ponto):
+				if(c not in added):
+					taxis_porto.append([r,c])
+					added.append(c)
+			if(queryLisboa %string_do_ponto):
+				if(c not in added):
+					taxis_lisboa.append([r,c])
+					added.append(c)
+			if(len(taxis_porto)==10 and len(taxis_lisboa)==10):
                 del added
-                return (taxis_porto, taxis_lisboa)                
+				return (taxis_porto, taxis_lisboa)    
+            #if(len(taxis_porto)<n and x_min_porto<=taxi_x<=x_max_porto and y_min_porto<=taxi_y<=y_max_porto):
+               # if(c not in added):
+               #     taxis_porto.append([r,c])
+               #     added.append(c)
+            #if(len(taxis_lisboa)<n and x_min_lisboa<=taxi_x<=x_max_lisboa and y_min_lisboa<=taxi_y<=y_max_lisboa):
+            #    if(c not in added):
+            #        taxis_lisboa.append([r,c])
+            #        added.append(c)
+            #if(len(taxis_porto)==10 and len(taxis_lisboa)==10):
+            #    del added
+            #    return (taxis_porto, taxis_lisboa)                
     del added
     return (taxis_porto, taxis_lisboa)
         
