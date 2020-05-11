@@ -43,7 +43,7 @@ def get_taxis(n,array):
     #y_min_lisboa=-109803.14460000023 
 
 	queryPorto = (''' select distrito, st_within(%s, proj_boundary) from cont_aad_caop2018 where distrito = "PORTO" ''')
-	queryLisboa = (''' select distrito, st_within(%s, proj_boundary) from cont_aad_caop2018 where distrito = "PORTO" ''')
+	queryLisboa = (''' select distrito, st_within(%s, proj_boundary) from cont_aad_caop2018 where distrito = "LISBOA" ''')
 
     taxis_porto=[]
     taxis_lisboa=[]
