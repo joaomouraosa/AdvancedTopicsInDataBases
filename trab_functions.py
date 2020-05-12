@@ -29,21 +29,11 @@ def query_database(query, cursor_psql):
     cursor_psql.execute(query)
     return cursor_psql.fetchall()
 
-def get_taxis(n,array):
-    #query='''select distrito, st_xmin(pol) as xmin, st_xmax(pol) as xmax, st_ymin(pol) as ymin, st_ymax(pol) as ymax from ( select distrito, st_union(proj_boundary) as pol from cont_aad_caop2018 where distrito='PORTO' OR distrito='LISBOA' group by distrito ) as foo'''
-    
-    #x_max_porto=21587.802799999714
-    #y_max_porto=200494.2405999992
-    #x_min_porto=-54840.610100000165
-    #y_min_porto=148062.88130000047
-        
-    #x_max_lisboa= -56153.14389999956
-    #y_max_lisboa=-38316.6501000002
-    #x_min_lisboa=-118821.75310000032
-    #y_min_lisboa=-109803.14460000023 
+def get_taxis(n,array, cursor_psql):
 
-	queryPorto = (''' select distrito, st_within(%s, proj_boundary) from cont_aad_caop2018 where distrito = "PORTO" ''')
-	queryLisboa = (''' select distrito, st_within(%s, proj_boundary) from cont_aad_caop2018 where distrito = "LISBOA" ''')
+    query = '''
+    select distrito from cont_aad_caop2018 where st_within(st_setsrid(st_makepoint(%d,%d),3763), proj_boundary)
+    '''
 
     taxis_porto=[]
     taxis_lisboa=[]
@@ -53,29 +43,22 @@ def get_taxis(n,array):
         for c in range(0,len(array[r])):
             taxi_x=array[r][c][0]
             taxi_y=array[r][c][1]
-			string_do_ponto="POINT(%d %d)" %(taxi_x, taxi_y)
-			if(queryPorto %string_do_ponto):
-				if(c not in added):
-					taxis_porto.append([r,c])
-					added.append(c)
-			if(queryLisboa %string_do_ponto):
-				if(c not in added):
-					taxis_lisboa.append([r,c])
-					added.append(c)
-			if(len(taxis_porto)==10 and len(taxis_lisboa)==10):
+
+            if(taxi_x==0 and taxi_y==0): #podemos passar a frente dos taxis que estao no ponto 0 0 ja que nao estao activos e 0 0 nao esta dentro do porto ou de liesboa
+                continue           
+            cursor_psql.execute(query % (taxi_x,taxi_y))
+            results=cursor_psql.fetchall()
+            if(results[0][0]=='PORTO'):
+                if(len(taxis_porto)<10 and c not in added):
+                    taxis_porto.append([r,c])
+                    added.append(c)
+            if(results[0][0]=='LISBOA'):
+                if(len(taxis_lisboa)<10 and c not in added):
+                    taxis_lisboa.append([r,c])
+                    added.append(c)
+            if(len(taxis_porto)==10 and len(taxis_lisboa)==10):
                 del added
-				return (taxis_porto, taxis_lisboa)    
-            #if(len(taxis_porto)<n and x_min_porto<=taxi_x<=x_max_porto and y_min_porto<=taxi_y<=y_max_porto):
-               # if(c not in added):
-               #     taxis_porto.append([r,c])
-               #     added.append(c)
-            #if(len(taxis_lisboa)<n and x_min_lisboa<=taxi_x<=x_max_lisboa and y_min_lisboa<=taxi_y<=y_max_lisboa):
-            #    if(c not in added):
-            #        taxis_lisboa.append([r,c])
-            #        added.append(c)
-            #if(len(taxis_porto)==10 and len(taxis_lisboa)==10):
-            #    del added
-            #    return (taxis_porto, taxis_lisboa)                
+                return (taxis_porto, taxis_lisboa)
     del added
     return (taxis_porto, taxis_lisboa)
         
@@ -87,7 +70,7 @@ def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV=True):
     infected = np.full((n_rows, n_cols), NOT_INFECTED)
     step=10
 
-    first_10_taxis_porto, first_10_taxis_lisboa=get_taxis(10,array)
+    first_10_taxis_porto, first_10_taxis_lisboa=get_taxis(10,array,cursor_psql)
                                   
     #escolher um taxi aleatorio do porto e outro de lisboa
     random_index=random.randint(0,9)
