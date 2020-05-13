@@ -10,8 +10,8 @@ import time
 import csv
 import copy
 
-INFECTED=.2 #codigo da cor vermelha para a animacao. pareceu-me mais facil atribuir directamente a cor em vez dum valor booleano.
-NOT_INFECTED=.3 #codigo da cor verde
+INFECTED=1 
+NOT_INFECTED=0
 SAVE_CSV=False
    
 def dist(point1, point2):
@@ -62,7 +62,8 @@ def get_taxis(n,array, cursor_psql):
     del added
     return (taxis_porto, taxis_lisboa)
         
-def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV=True):
+def calculate_epidemic(array,ts_i,prob, distance, conn,cursor_psql,SAVE_CSV=True,recovered=False):
+    recovered=[0 for i in len(OFFSETS[0])]
     
     n_rows = len(array) #number of timestamps
     n_cols = len(array[0]) #number of taxis
@@ -71,7 +72,7 @@ def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV=True):
     step=10
 
     first_10_taxis_porto, first_10_taxis_lisboa=get_taxis(10,array,cursor_psql)
-                                  
+    
     #escolher um taxi aleatorio do porto e outro de lisboa
     random_index=random.randint(0,9)
     porto = first_10_taxis_porto[random_index]
@@ -79,12 +80,9 @@ def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV=True):
 
     #marca os 2 taxis escolhidos como infectados para todos os timestamps a partir do timestamp em que comecaram a circular
 
-    
-    infected[porto[0]][porto[1]]=INFECTED
     for row in range(porto[0],n_rows):
         infected[row][porto[1]]=INFECTED
         
-    infected[lisboa[0]][lisboa[1]]=INFECTED
     for row in range(lisboa[0],n_rows):
         infected[row][lisboa[1]]=INFECTED
 
@@ -113,11 +111,11 @@ def calculate_epidemic(array,ts_i,conn,cursor_psql,SAVE_CSV=True):
                     continue
                               
                 INFECT=False
-                if(random.randint(1,10)==1): #10% de probabilidade de haver infeccao em 10s.
+                if(random.randint(int(prob*10),10)==10): #probabilidade p de haver infeccao em 10s.
                     INFECT=True
 
                 if (INFECT):
-                    if(dist(array[row][n_col1],array[row][n_col2])<=50):
+                    if(dist(array[row][n_col1],array[row][n_col2])<=distance):
                         if(COL1_INFECTED): #se o primeiro estiver infectado e o segundo nao, infectar o segundo
                             if (not SAVE_CSV):
                                 print(array[row][n_col1][0], " " , array[row][n_col1][1], " ",array[row][n_col2][0], " ",array[row][n_col2][1])
