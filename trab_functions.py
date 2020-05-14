@@ -137,7 +137,7 @@ def calculate_epidemic(array,ts_i,prob, distance, conn,cursor_psql,SAVE_CSV=True
             print("")
 
     return infected
-
+"""
 def getHistogramData(array):
     n_taxis = len(array[0])
     hist={}
@@ -164,7 +164,7 @@ def getHistogramData(array):
     histy=np.array(histy)
     histy_ninf=np.array(histy_ninf)
     return (histx,histy,histy_ninf)
-                           
+"""                           
 
 def read_csv(csv_file):
     array = []
@@ -192,22 +192,8 @@ def read_offsets(file_name):
                 y= float(y)
                 l.append([x,y])
             offsets.append(l)
-    x,y = [],[]
-    for i in offsets[0]:
-        x.append(i[0])
-        y.append(i[1])
     return offsets
+#import trab_functions as aux
+#aux.write_offsets([1,2,3])
 
 
-
-
-"""
-def histogramas(array, ts_i,hora_i, hora_f):
-    ts_hora_i=ts_i+360*hora_i
-    ts_hora_f=ts_i+360*hora_f
-
-    for i in range(ts_hora_i,ts_hora_f):
-        for c in range(0,len(array[0])):
-            if c in distrito:
-                
-"""    
