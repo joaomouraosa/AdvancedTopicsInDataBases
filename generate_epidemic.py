@@ -36,4 +36,4 @@ for i in offsets[0]:
 #trab_functions.calculate_epidemic(offsets,ts_i,None, None, SAVE_CSV)
 
 #criar epidemia com recuperados
-trab_functions.calculate_epidemic_with_imunity(offsets,ts_i,None, None, SAVE_CSV)
+trab_functions.calculate_epidemic(offsets,ts_i,immunity_mode=True)

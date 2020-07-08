@@ -12,6 +12,7 @@ import copy
 
 INFECTED=1 
 NOT_INFECTED=0
+RECOVERED=2
 SAVE_CSV=False
    
 def dist(point1, point2):
@@ -62,15 +63,19 @@ def get_taxis(n,array, cursor_psql):
     del added
     return (taxis_porto, taxis_lisboa)
         
-def calculate_epidemic(array,ts_i,prob, distance, conn,cursor_psql,SAVE_CSV=True,recovered=False):
-    recovered=[0 for i in len(OFFSETS[0])]
-    
+def calculate_epidemic(array,ts_i,prob=.10, distance=50, SAVE_CSV=True,immunity_mode=False):
+    SAVE_CSV=False
+    conn = psycopg2.connect("dbname=tracks user=nan")
+    cursor_psql = conn.cursor()
+
     n_rows = len(array) #number of timestamps
     n_cols = len(array[0]) #number of taxis
+
+    recovery_counter = [0 for i in range(0,n_cols)]
+    RECOVERY_TIME = 360*6 #6 horas
     
     infected = np.full((n_rows, n_cols), NOT_INFECTED)
-    step=10
-
+        
     first_10_taxis_porto, first_10_taxis_lisboa=get_taxis(10,array,cursor_psql)
     
     #escolher um taxi aleatorio do porto e outro de lisboa
@@ -79,37 +84,61 @@ def calculate_epidemic(array,ts_i,prob, distance, conn,cursor_psql,SAVE_CSV=True
     lisboa= first_10_taxis_lisboa[random_index]
 
     #marca os 2 taxis escolhidos como infectados para todos os timestamps a partir do timestamp em que comecaram a circular
-
     for row in range(porto[0],n_rows):
         infected[row][porto[1]]=INFECTED
+    recovery_counter[porto[1]]=1
         
     for row in range(lisboa[0],n_rows):
         infected[row][lisboa[1]]=INFECTED
-
+    recovery_counter[lisboa[1]]=1
+        
     for row in range(0,n_rows):
         starttime=time.time()
 
         for n_col1 in range(0,n_cols-1):
 
-            COL1_INFECTED=False
+            COL1_INFECTED, COL1_RECOVERED=False, False
+
+            if (immunity_mode and infected[row][n_col1]==RECOVERED):
+                continue
+            
             if(infected[row][n_col1]==INFECTED):
                 COL1_INFECTED=True
+                recovery_counter[n_col1]+=1
+
+                if(immunity_mode and recovery_counter[n_col1]>=RECOVERY_TIME):
+                    for r in range(row,n_rows):
+                        infected[r][n_col1]=RECOVERED
+                        COL1_RECOVERED=True
                 
             if(int(array[row][n_col1][0])==0): #se o taxi1 tiver coordenadas 0 0, significa que nao esta activo, e nao vai ser considerado
-                continue        
+                continue
+            if(immunity_mode and COL1_RECOVERED): #o taxi esta recuperado, nao vai infectar nem ser infectado
+                continue
+            
             for n_col2 in range(n_col1+1,n_cols):
                 if(int(array[row][n_col2][0])==0): #se o taxi2 tiver coordenadas 0 0, tambem nao vai ser considerado
                     continue
-
-                COL2_INFECTED=False
+                
+                if (immunity_mode and infected[row][n_col2]==RECOVERED):
+                    continue
+                
+                COL2_INFECTED, COL2_RECOVERED=False, False
                 if(infected[row][n_col2]==INFECTED):
                     COL2_INFECTED=True
-                    
+
+                if(immunity_mode and COL2_INFECTED and recovery_counter[n_col2]>=RECOVERY_TIME):
+                    for r in range(row,n_rows):
+                        infected[r][n_col2]=RECOVERED
+                        COL2_RECOVERED=True
+    
                 if(not COL1_INFECTED and not COL2_INFECTED): #se nenhum dos dois taxis esta infectado, nenhum vai infectar o outro, podemos passar para o proximo taxi
                     continue
                 if(COL1_INFECTED and COL2_INFECTED): #se os dois ja estiverem infectados, tambem podemos avancar para o proximo
                     continue
-                              
+                if(immunity_mode and COL2_RECOVERED): #se o segundo taxi esta recuperado, nao vai infectar o anterior
+                    continue
+                
                 INFECT=False
                 if(random.randint(int(prob*10),10)==10): #probabilidade p de haver infeccao em 10s.
                     INFECT=True
@@ -121,11 +150,14 @@ def calculate_epidemic(array,ts_i,prob, distance, conn,cursor_psql,SAVE_CSV=True
                                 print(array[row][n_col1][0], " " , array[row][n_col1][1], " ",array[row][n_col2][0], " ",array[row][n_col2][1])
                             for r in range(row,n_rows):
                                 infected[r][n_col2]=INFECTED
+                            recovery_counter[n_col2]+=1
+                                
                         else:
                             if (not SAVE_CSV):
                                 print(array[row][n_col1][0], " " , array[row][n_col1][1], " ",array[row][n_col2][0], " ",array[row][n_col2][1])
                             for r in range(row,n_rows):
                                 infected[r][n_col1]=INFECTED
+                            recovery_counter[n_col1]+=1
         if(not SAVE_CSV):
             print('row %d took %f' % (row,time.time()-starttime))
 
@@ -137,6 +169,62 @@ def calculate_epidemic(array,ts_i,prob, distance, conn,cursor_psql,SAVE_CSV=True
             print("")
 
     return infected
+
+def get_histograms(distritos, infected, OFFSETS, cursor_psql):
+    S, I, R = 0, 1, 2
+    hist={}
+    step=120
+    n=int(len(infected)/step)
+    inf_pos, rec_pos =[], []
+
+    '''inicializar os histogramas'''
+    for d in distritos:
+        hist[d]={}
+        for s in ["S","I","R"]:
+            hist[d][s]=[0]*n
+        
+    def within(point):
+        x,y=float(point[0]),float(point[1])
+        if (x==0 and y==0):
+            return "NOT_ACTIVE"
+    
+        query=  '''
+            SELECT distrito 
+            FROM cont_aad_caop2018
+            WHERE st_within(ST_SetSRID(ST_Point( %f, %f), 3763), proj_boundary) 
+            ''' % (x,y)
+        cursor_psql.execute(query)
+        results = cursor_psql.fetchall()
+        if (not results):
+            return "NOT_ACTIVE"
+        return str(results[0][0])
+    k=0
+
+    for i in range(0,len(infected),step):
+        for j in range(0,len(infected[i])):
+            d=within(OFFSETS[i][j])
+            if (d!="NOT_ACTIVE"):
+                if (infected[i][j]==I and j not in inf_pos):
+                    if(d in distritos):
+                        hist[d]["I"][k]+=1
+                    hist["*"]["I"][k]+=1
+                    inf_pos.append(j)
+
+                if (infected[i][j]==R and j not in rec_pos):
+                    hist["*"]["R"][k]+=1               
+                    hist["*"]["S"][k]-=1
+                    hist["*"]["I"][k]-=1
+                    rec_pos.append(j)
+
+        if (k>0):
+            for d in distritos:
+                hist[d]["I"][k]+=hist[d]["I"][k-1]
+                hist[d]["R"][k]+=hist[d]["R"][k-1]
+                hist["*"]["S"][k]=1660-hist["*"]["R"][k-1]-hist["*"]["I"][k-1]
+        k+=1
+    return hist
+
+
 """
 def getHistogramData(array):
     n_taxis = len(array[0])
@@ -197,91 +285,23 @@ def read_offsets(file_name):
 #aux.write_offsets([1,2,3])
 
 
-def calculate_epidemic_with_imunity(array,ts_i,prob, distance, conn,cursor_psql,SAVE_CSV=True,recovered=False):
-    recovered=[0 for i in len(OFFSETS[0])]
 
-    n_rows = len(array) #number of timestamps
-    n_cols = len(array[0]) #number of taxis
-
-    infected = np.full((n_rows, n_cols), NOT_INFECTED)
-    step=10
-
-    first_10_taxis_porto, first_10_taxis_lisboa=get_taxis(10,array,cursor_psql)
-
-    #escolher um taxi aleatorio do porto e outro de lisboa
-    random_index=random.randint(0,9)
-    porto = first_10_taxis_porto[random_index]
-    lisboa= first_10_taxis_lisboa[random_index]
-
-    #marca os 2 taxis escolhidos como infectados para todos os timestamps a partir do timestamp em que comecaram a circular
-
-    for row in range(porto[0],n_rows):
-        infected[row][porto[1]]=INFECTED
-
-    for row in range(lisboa[0],n_rows):
-        infected[row][lisboa[1]]=INFECTED
-
-    for row in range(0,n_rows):
-        starttime=time.time()
-
-        for n_col1 in range(0,n_cols-1):
-
-            COL1_INFECTED=False
-			COL1_RECOVERED=False
-			if(infected[row][n_col1]>RECOVERED):
-				if(infected[row][n_col1]==RECOVER_TIME):
-					infected[row][n_col1]=RECOVERED
-					COL1_RECOVERED=True
-				else:
-					infected[row][n_col1]+=1
-					COL1_INFECTED=True
-
-            if(infected[row][n_col1]==INFECTED):
-                infected[row][n_col1]=3
-				COL1_INFECTED=True
-
-            if(int(array[row][n_col1][0])==0): #se o taxi1 tiver coordenadas 0 0, significa que nao esta activo, e nao vai ser considerado
-                continue        
-            for n_col2 in range(n_col1+1,n_cols):
-                if(int(array[row][n_col2][0])==0): #se o taxi2 tiver coordenadas 0 0, tambem nao vai ser considerado
-                    continue
-
-                COL2_INFECTED=False
-				COL2_RECOVERED=False
-                if(infected[row][n_col2]==INFECTED):
-                    COL2_INFECTED=True
-				if(infected[row][n_col2]==RECOVERED):
-                    COL2_RECOVERED=True     
-                if(not COL1_INFECTED and not COL2_INFECTED): #se nenhum dos dois taxis esta infectado, nenhum vai infectar o outro, podemos passar para o proximo taxi
-                    continue
-                if(COL1_INFECTED and COL2_INFECTED): #se os dois ja estiverem infectados, tambem podemos avancar para o proximo
-                    continue
-                if(COL2_RECOVERED or COL1_RECOVERED): #se um dos dois estiver imune, não irá haver infeção
-					continue
-                INFECT=False
-                if(random.randint(int(prob*10),10)==10): #probabilidade p de haver infeccao em 10s.
-                    INFECT=True
-
-                if (INFECT):
-                    if(dist(array[row][n_col1],array[row][n_col2])<=distance):
-                        if(COL1_INFECTED): #se o primeiro estiver infectado e o segundo nao, infectar o segundo
-                            if (not SAVE_CSV):
-                                print(array[row][n_col1][0], " " , array[row][n_col1][1], " ",array[row][n_col2][0], " ",array[row][n_col2][1])
-                            for r in range(row,n_rows):
-                                infected[r][n_col2]=INFECTED
-                        else:
-                            if (not SAVE_CSV):
-                                print(array[row][n_col1][0], " " , array[row][n_col1][1], " ",array[row][n_col2][0], " ",array[row][n_col2][1])
-                            for r in range(row,n_rows):
-                                infected[r][n_col1]=INFECTED
-        if(not SAVE_CSV):
-            print('row %d took %f' % (row,time.time()-starttime))
-
-    if(SAVE_CSV):
-        for row in infected:
-            print("%f" %(row[0]),end='')
-            for col in range(1,len(row)):
-                print(",%f" %(row[col]),end='')
-            print("")
-
-    return infected
+def show_map(results,map_plot, color_="black"):
+    xs, ys = [],[]
+    for row in results:
+        geom = row[1]
+        if type(geom) is MultiPolygon:
+            for pol in geom:
+                xys = pol[0].coords
+                xs, ys = [],[]
+                for (x,y) in xys:
+                    xs.append(x)
+                    ys.append(y)
+                map_plot.plot(xs,ys,color=color_,lw='0.2',alpha=1)
+        if type(geom) is Polygon:
+            xys = geom[0].coords
+            xs, ys = [],[]
+            for (x,y) in xys:
+                xs.append(x)
+                ys.append(y)
+            map_plot.plot(xs,ys,color=color_, lw='0.2',alpha=1)
