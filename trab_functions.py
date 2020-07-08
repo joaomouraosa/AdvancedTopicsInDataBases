@@ -305,3 +305,71 @@ def show_map(results,map_plot, color_="black"):
                 xs.append(x)
                 ys.append(y)
             map_plot.plot(xs,ys,color=color_, lw='0.2',alpha=1)
+
+def update_map(results,map_plot, timestamp):
+    xs, ys = [],[]
+    for row in results:
+        geom = row[1]
+        if type(geom) is MultiPolygon:
+            for pol in geom:
+                xys = pol[0].coords
+                xs, ys = [],[]
+                for (x,y) in xys:
+                    xs.append(x)
+                    ys.append(y)
+                map_plot.plot(xs,ys,color='red',lw='0.2',alpha=1)
+        if type(geom) is Polygon:
+            xys = geom[0].coords
+            xs, ys = [],[]
+            for (x,y) in xys:
+                xs.append(x)
+                ys.append(y)
+            map_plot.plot(xs,ys,color='red', lw='0.2',alpha=1)
+
+
+def distritos_infetados(infected, OFFSETS, cursor_psql):
+    dist={}
+    step=120
+    n=int(len(infected)/step)
+    inf_pos, rec_pos =[], []
+	
+	cursor_psql.execute('''
+                    SELECT st_union(proj_boundary) 
+                    FROM cont_aad_caop2018
+					GROUP BY distrito
+                    ''')
+	distritos  = cursor_psql.fetchall()
+
+    '''inicializar os histogramas'''
+    for d in distritos:
+        dist[d]={}
+        dist[d]=[False]*n
+        
+    def within(point):
+        x,y=float(point[0]),float(point[1])
+        if (x==0 and y==0):
+            return "NOT_ACTIVE"
+    
+        query=  '''
+            SELECT st_union(proj_boundary) 
+            FROM cont_aad_caop2018
+            WHERE st_within(ST_SetSRID(ST_Point( %f, %f), 3763), proj_boundary)
+			GROUP BY distrito			
+            ''' % (x,y)
+        cursor_psql.execute(query)
+        results = cursor_psql.fetchall()
+        if (not results):
+            return "NOT_ACTIVE"
+        return str(results[0][0])
+    k=0
+
+    for i in range(0,len(infected),step):
+        for j in range(0,len(infected[i])):
+            d=within(OFFSETS[i][j])
+            if (d!="NOT_ACTIVE"):
+                if (infected[i][j]==I and j not in inf_pos):
+                    if(d in distritos):
+                        dist[d][k]=True
+                    inf_pos.append(j)
+        k+=1
+    return dist
