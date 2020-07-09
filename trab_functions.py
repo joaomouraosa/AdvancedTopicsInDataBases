@@ -64,111 +64,109 @@ def get_taxis(n,array, cursor_psql):
     return (taxis_porto, taxis_lisboa)
         
 def calculate_epidemic(array,ts_i,prob=.10, distance=50, SAVE_CSV=True,immunity_mode=False):
-    SAVE_CSV=False
-    conn = psycopg2.connect("dbname=tracks user=nan")
-    cursor_psql = conn.cursor()
+	SAVE_CSV=False
+	conn = psycopg2.connect("dbname=tracks user=nan")
+	cursor_psql = conn.cursor()
 
-    n_rows = len(array) #number of timestamps
-    n_cols = len(array[0]) #number of taxis
+	n_rows = len(array) #number of timestamps
+	n_cols = len(array[0]) #number of taxis
 
-    recovery_counter = [0 for i in range(0,n_cols)]
-    RECOVERY_TIME = 360*6 #6 horas
+	recovery_counter = [0 for i in range(0,n_cols)]
+	RECOVERY_TIME = 360*6 #6 horas
     
-    infected = np.full((n_rows, n_cols), NOT_INFECTED)
+	nfected = np.full((n_rows, n_cols), NOT_INFECTED)
         
-    first_10_taxis_porto, first_10_taxis_lisboa=get_taxis(10,array,cursor_psql)
+	first_10_taxis_porto, first_10_taxis_lisboa=get_taxis(10,array,cursor_psql)
     
     #escolher um taxi aleatorio do porto e outro de lisboa
-    random_index=random.randint(0,9)
-    porto = first_10_taxis_porto[random_index]
-    lisboa= first_10_taxis_lisboa[random_index]
+	random_index=random.randint(0,9)
+	porto = first_10_taxis_porto[random_index]
+	lisboa= first_10_taxis_lisboa[random_index]
 
-    #marca os 2 taxis escolhidos como infectados para todos os timestamps a partir do timestamp em que comecaram a circular
-    for row in range(porto[0],n_rows):
-        infected[row][porto[1]]=INFECTED
-    recovery_counter[porto[1]]=1
+	#marca os 2 taxis escolhidos como infectados para todos os timestamps a partir do timestamp em que comecaram a circular
+	for row in range(porto[0],n_rows):
+		infected[row][porto[1]]=INFECTED
+	recovery_counter[porto[1]]=1
         
-    for row in range(lisboa[0],n_rows):
-        infected[row][lisboa[1]]=INFECTED
-    recovery_counter[lisboa[1]]=1
+	for row in range(lisboa[0],n_rows):
+		infected[row][lisboa[1]]=INFECTED
+	recovery_counter[lisboa[1]]=1
         
-    for row in range(0,n_rows):
-        starttime=time.time()
+	for row in range(0,n_rows):
+		starttime=time.time()
+		for n_col1 in range(0,n_cols-1):
 
-        for n_col1 in range(0,n_cols-1):
-
-            COL1_INFECTED, COL1_RECOVERED=False, False
-
-            if (immunity_mode and infected[row][n_col1]==RECOVERED):
-                continue
+			COL1_INFECTED, COL1_RECOVERED=False, False
+			if (immunity_mode and infected[row][n_col1]==RECOVERED):
+				continue
             
-            if(infected[row][n_col1]==INFECTED):
-                COL1_INFECTED=True
-                recovery_counter[n_col1]+=1
+			if(infected[row][n_col1]==INFECTED):
+				COL1_INFECTED=True
+				recovery_counter[n_col1]+=1
 
-                if(immunity_mode and recovery_counter[n_col1]>=RECOVERY_TIME):
-                    for r in range(row,n_rows):
-                        infected[r][n_col1]=RECOVERED
-                        COL1_RECOVERED=True
+				if(immunity_mode and recovery_counter[n_col1]>=RECOVERY_TIME):
+					for r in range(row,n_rows):
+						infected[r][n_col1]=RECOVERED
+						COL1_RECOVERED=True
                 
-            if(int(array[row][n_col1][0])==0): #se o taxi1 tiver coordenadas 0 0, significa que nao esta activo, e nao vai ser considerado
-                continue
-            if(immunity_mode and COL1_RECOVERED): #o taxi esta recuperado, nao vai infectar nem ser infectado
-                continue
+			if(int(array[row][n_col1][0])==0): #se o taxi1 tiver coordenadas 0 0, significa que nao esta activo, e nao vai ser considerado
+				continue
+			if(immunity_mode and COL1_RECOVERED): #o taxi esta recuperado, nao vai infectar nem ser infectado
+				continue
             
-            for n_col2 in range(n_col1+1,n_cols):
-                if(int(array[row][n_col2][0])==0): #se o taxi2 tiver coordenadas 0 0, tambem nao vai ser considerado
-                    continue
+			for n_col2 in range(n_col1+1,n_cols):
+				if(int(array[row][n_col2][0])==0): #se o taxi2 tiver coordenadas 0 0, tambem nao vai ser considerado
+					continue
                 
-                if (immunity_mode and infected[row][n_col2]==RECOVERED):
-                    continue
+				if (immunity_mode and infected[row][n_col2]==RECOVERED):
+					continue
                 
-                COL2_INFECTED, COL2_RECOVERED=False, False
-                if(infected[row][n_col2]==INFECTED):
-                    COL2_INFECTED=True
+				COL2_INFECTED, COL2_RECOVERED=False, False
+				if(infected[row][n_col2]==INFECTED):
+					COL2_INFECTED=True
 
-                if(immunity_mode and COL2_INFECTED and recovery_counter[n_col2]>=RECOVERY_TIME):
-                    for r in range(row,n_rows):
-                        infected[r][n_col2]=RECOVERED
-                        COL2_RECOVERED=True
+				if(immunity_mode and COL2_INFECTED and recovery_counter[n_col2]>=RECOVERY_TIME):
+					for r in range(row,n_rows):
+						infected[r][n_col2]=RECOVERED
+						COL2_RECOVERED=True
     
-                if(not COL1_INFECTED and not COL2_INFECTED): #se nenhum dos dois taxis esta infectado, nenhum vai infectar o outro, podemos passar para o proximo taxi
-                    continue
-                if(COL1_INFECTED and COL2_INFECTED): #se os dois ja estiverem infectados, tambem podemos avancar para o proximo
-                    continue
-                if(immunity_mode and COL2_RECOVERED): #se o segundo taxi esta recuperado, nao vai infectar o anterior
-                    continue
+				if(not COL1_INFECTED and not COL2_INFECTED): #se nenhum dos dois taxis esta infectado, nenhum vai infectar o outro, podemos passar para o proximo taxi
+					continue
+				if(COL1_INFECTED and COL2_INFECTED): #se os dois ja estiverem infectados, tambem podemos avancar para o proximo
+					continue
+				if(immunity_mode and COL2_RECOVERED): #se o segundo taxi esta recuperado, nao vai infectar o anterior
+					continue
                 
-                INFECT=False
-                if(random.randint(int(prob*10),10)==10): #probabilidade p de haver infeccao em 10s.
-                    INFECT=True
+				INFECT=False
+				if(random.randint(int(prob*10),10)==10): #probabilidade p de haver infeccao em 10s.
+					INFECT=True
 
-                if (INFECT):
-                    if(dist(array[row][n_col1],array[row][n_col2])<=distance):
-                        if(COL1_INFECTED): #se o primeiro estiver infectado e o segundo nao, infectar o segundo
-                            if (not SAVE_CSV):
-                                print(array[row][n_col1][0], " " , array[row][n_col1][1], " ",array[row][n_col2][0], " ",array[row][n_col2][1])
-                            for r in range(row,n_rows):
-                                infected[r][n_col2]=INFECTED
-                            recovery_counter[n_col2]+=1
+				if (INFECT):
+					if(dist(array[row][n_col1],array[row][n_col2])<=distance):
+						if(COL1_INFECTED): #se o primeiro estiver infectado e o segundo nao, infectar o segundo
+							if (not SAVE_CSV):
+								print(array[row][n_col1][0], " " , array[row][n_col1][1], " ",array[row][n_col2][0], " ",array[row][n_col2][1])
+							for r in range(row,n_rows):
+								infected[r][n_col2]=INFECTED
+							recovery_counter[n_col2]+=1
                                 
-                        else:
-                            if (not SAVE_CSV):
-                                print(array[row][n_col1][0], " " , array[row][n_col1][1], " ",array[row][n_col2][0], " ",array[row][n_col2][1])
-                            for r in range(row,n_rows):
-                                infected[r][n_col1]=INFECTED
-                            recovery_counter[n_col1]+=1
-        if(not SAVE_CSV):
-            print('row %d took %f' % (row,time.time()-starttime))
+						else:
+							if (not SAVE_CSV):
+								print(array[row][n_col1][0], " " , array[row][n_col1][1], " ",array[row][n_col2][0], " ",array[row][n_col2][1])
+							for r in range(row,n_rows):
+								infected[r][n_col1]=INFECTED
+							recovery_counter[n_col1]+=1
+		if(not SAVE_CSV):
+			print('row %d took %f' % (row,time.time()-starttime))
 
-    if(SAVE_CSV):
-        for row in infected:
-            print("%f" %(row[0]),end='')
-            for col in range(1,len(row)):
-                print(",%f" %(row[col]),end='')
-            print("")
+	if(SAVE_CSV):
+		for row in infected:
+			print("%f" %(row[0]),end='')
+			for col in range(1,len(row)):
+				print(",%f" %(row[col]),end='')
+			print("")
 
-    return infected
+	return infected
 
 def get_histograms(distritos, infected, OFFSETS, cursor_psql):
     S, I, R = 0, 1, 2
@@ -287,89 +285,93 @@ def read_offsets(file_name):
 
 
 def show_map(results,map_plot, color_="black"):
-    xs, ys = [],[]
-    for row in results:
-        geom = row[1]
-        if type(geom) is MultiPolygon:
-            for pol in geom:
-                xys = pol[0].coords
-                xs, ys = [],[]
-                for (x,y) in xys:
-                    xs.append(x)
-                    ys.append(y)
-                map_plot.plot(xs,ys,color=color_,lw='0.2',alpha=1)
-        if type(geom) is Polygon:
-            xys = geom[0].coords
-            xs, ys = [],[]
-            for (x,y) in xys:
-                xs.append(x)
-                ys.append(y)
-            map_plot.plot(xs,ys,color=color_, lw='0.2',alpha=1)
+	xs, ys = [],[]
+	for row in results:
+		geom = row[1]
+		if type(geom) is MultiPolygon:
+			for pol in geom:
+				xys = pol[0].coords
+				xs, ys = [],[]
+				for (x,y) in xys:
+					xs.append(x)
+					ys.append(y)
+				#print(xs)
+				map_plot.plot(xs,ys,color=color_,lw='1',alpha=1)
+		if type(geom) is Polygon:
+			xys = geom[0].coords
+			xs, ys = [],[]
+			for (x,y) in xys:
+				xs.append(x)
+				ys.append(y)
+			map_plot.plot(xs,ys,color=color_, lw='1',alpha=1)
 
 def update_map(results,map_plot, timestamp):
-    xs, ys = [],[]
-    for row in results:
-        geom = row[1]
-        if type(geom) is MultiPolygon:
-            for pol in geom:
-                xys = pol[0].coords
-                xs, ys = [],[]
-                for (x,y) in xys:
-                    xs.append(x)
-                    ys.append(y)
-                map_plot.plot(xs,ys,color='red',lw='0.2',alpha=1)
-        if type(geom) is Polygon:
-            xys = geom[0].coords
-            xs, ys = [],[]
-            for (x,y) in xys:
-                xs.append(x)
-                ys.append(y)
-            map_plot.plot(xs,ys,color='red', lw='0.2',alpha=1)
-
-
+	xs, ys = [],[]
+	for x in results.keys():
+		geom = results[x]["timestamp"][timestamp]
+		if(geom==True):
+			if(type(results[x]["poligono"][0][0]) is list):
+				for i in range(len(results[x]["poligono"][0])):
+					map_plot.plot(results[x]["poligono"][0][i],results[x]["poligono"][1][i],color='red',lw='1',alpha=1)
+			else:
+				map_plot.plot(results[x]["poligono"][0],results[x]["poligono"][1],color='red',lw='1',alpha=1)
+		elif(timestamp!=0 and results[x]["timestamp"][timestamp-1]==True):
+			if(type(results[x]["poligono"][0][0]) is list):
+				for i in range(len(results[x]["poligono"][0])):
+					map_plot.plot(results[x]["poligono"][0][i],results[x]["poligono"][1][i],color='black',lw='1',alpha=1)
+			else:
+				map_plot.plot(results[x]["poligono"][0],results[x]["poligono"][1],color='black',lw='1',alpha=1)
 def distritos_infetados(infected, OFFSETS, cursor_psql):
-    dist={}
-    step=120
-    n=int(len(infected)/step)
-    inf_pos, rec_pos =[], []
+	cursor_psql.execute('''SELECT distrito,st_union(proj_boundary) FROM cont_aad_caop2018 GROUP BY distrito''')
+	dist={}
+	step=120
+	n=int(len(infected)/step)
+	results=cursor_psql.fetchall()
 	
-	cursor_psql.execute('''
-                    SELECT st_union(proj_boundary) 
-                    FROM cont_aad_caop2018
-					GROUP BY distrito
-                    ''')
-	distritos  = cursor_psql.fetchall()
-
-    '''inicializar os histogramas'''
-    for d in distritos:
-        dist[d]={}
-        dist[d]=[False]*n
-        
-    def within(point):
-        x,y=float(point[0]),float(point[1])
-        if (x==0 and y==0):
-            return "NOT_ACTIVE"
+	'''inicializar os histogramas'''
+	for d in results:
+		dist[d[0]]={}
+		dist[d[0]]["poligono"]=([],[])
+		if type(d[1]) is MultiPolygon:
+			for pol in d[1]:
+				xys = pol[0].coords
+				xs, ys = [],[]
+				for (x,y) in xys:
+					xs.append(x)
+					ys.append(y)
+				dist[d[0]]["poligono"][0].append(xs)
+				dist[d[0]]["poligono"][1].append(ys)
+		if type(d[1]) is Polygon:
+			xys = d[1][0].coords
+			xs, ys = [],[]
+			for (x,y) in xys:
+				dist[d[0]]["poligono"][0].append(x)
+				dist[d[0]]["poligono"][1].append(y)
+		dist[d[0]]["timestamp"]=[False]*n
+	
+	def within(point):
+		x,y=float(point[0]),float(point[1])
+		if (x==0 and y==0):
+			return "NOT_ACTIVE"
     
-        query=  '''
-            SELECT st_union(proj_boundary) 
+		query=  '''
+			SELECT distrito,st_union(proj_boundary) 
             FROM cont_aad_caop2018
             WHERE st_within(ST_SetSRID(ST_Point( %f, %f), 3763), proj_boundary)
 			GROUP BY distrito			
-            ''' % (x,y)
-        cursor_psql.execute(query)
-        results = cursor_psql.fetchall()
-        if (not results):
-            return "NOT_ACTIVE"
-        return str(results[0][0])
-    k=0
+			''' % (x,y)
+		cursor_psql.execute(query)
+		results = cursor_psql.fetchall()
+		if (not results):
+			return "NOT_ACTIVE"
+		return str(results[0][0])
+	k=0
 
-    for i in range(0,len(infected),step):
-        for j in range(0,len(infected[i])):
-            d=within(OFFSETS[i][j])
-            if (d!="NOT_ACTIVE"):
-                if (infected[i][j]==I and j not in inf_pos):
-                    if(d in distritos):
-                        dist[d][k]=True
-                    inf_pos.append(j)
-        k+=1
-    return dist
+	for i in range(0,len(infected),step):
+		for j in range(0,len(infected[i])):
+			d=within(OFFSETS[i][j])
+			if (d!="NOT_ACTIVE"):
+				if (infected[i][j]==1):
+					dist[d]["timestamp"][k]=True
+		k+=1
+	return dist
