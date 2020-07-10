@@ -64,7 +64,7 @@ def get_taxis(n,array, cursor_psql):
     return (taxis_porto, taxis_lisboa)
         
 def calculate_epidemic(array,ts_i,prob=.10, distance=50, SAVE_CSV=True,immunity_mode=False):
-	SAVE_CSV=False
+
 	conn = psycopg2.connect("dbname=tracks user=nan")
 	cursor_psql = conn.cursor()
 
@@ -74,7 +74,7 @@ def calculate_epidemic(array,ts_i,prob=.10, distance=50, SAVE_CSV=True,immunity_
 	recovery_counter = [0 for i in range(0,n_cols)]
 	RECOVERY_TIME = 360*6 #6 horas
     
-	nfected = np.full((n_rows, n_cols), NOT_INFECTED)
+	infected = np.full((n_rows, n_cols), NOT_INFECTED)
         
 	first_10_taxis_porto, first_10_taxis_lisboa=get_taxis(10,array,cursor_psql)
     
@@ -168,17 +168,76 @@ def calculate_epidemic(array,ts_i,prob=.10, distance=50, SAVE_CSV=True,immunity_
 
 	return infected
 
+   
 def get_histograms(distritos, infected, OFFSETS, cursor_psql):
     S, I, R = 0, 1, 2
+
     hist={}
     step=120
     n=int(len(infected)/step)
-    inf_pos, rec_pos =[], []
 
     '''inicializar os histogramas'''
     for d in distritos:
         hist[d]={}
-        for s in ["S","I","R"]:
+        hist[d]["temp"]={}
+        for x in ["total","perc"]:
+            hist[d][x]={}
+            for s in ["S","I","R","all"]:
+                hist[d][x][s]=[0]*n
+                hist[d]["temp"][s]=[]
+                
+    def within(point):
+        x,y=float(point[0]),float(point[1])
+        if (x==0 and y==0):
+            return "NOT_ACTIVE"    
+        query=  ''' SELECT distrito  FROM cont_aad_caop2018  WHERE st_within(ST_SetSRID(ST_Point( %f, %f), 3763), proj_boundary)  ''' % (x,y)
+        cursor_psql.execute(query)
+        results = cursor_psql.fetchall()
+        if (not results):
+            return "NOT_ACTIVE"
+        return str(results[0][0])
+    k=0
+
+    for i in range(0,len(infected),step):
+        for j in range(0,len(infected[i])):
+            d=within(OFFSETS[i][j])
+            if (d!="NOT_ACTIVE"):
+                if (infected[i][j]==S):
+                    if(d in distritos):
+                        hist[d]["total"]["S"][k]+=1
+                        hist["PORTUGAL"]["total"]["S"][k]+=1
+                if (infected[i][j]==I):
+                    if(d in distritos):
+                        hist[d]["total"]["I"][k]+=1
+                        hist["PORTUGAL"]["total"]["I"][k]+=1                        
+                if (infected[i][j]==R):
+                    if(d in distritos):
+                        hist[d]["total"]["R"][k]+=1
+                        hist["PORTUGAL"]["total"]["R"][k]+=1
+        for d in distritos:
+            total=hist[d]["total"]["S"][k]+hist[d]["total"]["I"][k]+hist[d]["total"]["R"][k]
+            for s in ["S","I","R"]:
+                if (total!=0):
+                    hist[d]["perc"][s][k]= int(100*hist[d]["total"][s][k]/total)
+                else:
+                    hist[d]["perc"][s][k]= None
+        k+=1
+
+    return hist
+
+
+   
+def get_histograms1(distritos, infected, OFFSETS, cursor_psql):
+    S, I, R = 0, 1, 2
+    hist={}
+    step=120
+    n=int(len(infected)/step)
+    inf_pos, rec_pos, sus_pos =[], [], []
+
+    '''inicializar os histogramas'''
+    for d in distritos:
+        hist[d]={}
+        for s in ["S","I","R","all"]:
             hist[d][s]=[0]*n
         
     def within(point):
@@ -202,25 +261,36 @@ def get_histograms(distritos, infected, OFFSETS, cursor_psql):
         for j in range(0,len(infected[i])):
             d=within(OFFSETS[i][j])
             if (d!="NOT_ACTIVE"):
+                if (infected[i][j]==S and j not in sus_pos):
+                    if(d in distritos):
+                        hist[d]["S"][k]+=1
+                    hist["*"]["S"][k]+=1
+                    sus_pos.append(j)
+                    
                 if (infected[i][j]==I and j not in inf_pos):
                     if(d in distritos):
                         hist[d]["I"][k]+=1
                     hist["*"]["I"][k]+=1
                     inf_pos.append(j)
-
+                    
                 if (infected[i][j]==R and j not in rec_pos):
+                    if(d in distritos):
+                        hist[d]["R"][k]+=1
                     hist["*"]["R"][k]+=1               
-                    hist["*"]["S"][k]-=1
-                    hist["*"]["I"][k]-=1
                     rec_pos.append(j)
+                hist["*"]["all"][k]+=1
 
         if (k>0):
             for d in distritos:
-                hist[d]["I"][k]+=hist[d]["I"][k-1]
-                hist[d]["R"][k]+=hist[d]["R"][k-1]
-                hist["*"]["S"][k]=1660-hist["*"]["R"][k-1]-hist["*"]["I"][k-1]
+                hist[d]["S"][k] = hist[d]["S"][k] + hist[d]["S"][k-1] - hist[d]["I"][k]
+                hist[d]["I"][k] = hist[d]["I"][k] + hist[d]["I"][k-1] - hist[d]["R"][k] 
+                hist[d]["R"][k]+= hist[d]["R"][k-1]
+                if(hist[d]["S"][k]<0):
+                    hist[d]["S"][k]=0
         k+=1
     return hist
+
+
 
 
 """
@@ -296,31 +366,32 @@ def show_map(results,map_plot, color_="black"):
 					xs.append(x)
 					ys.append(y)
 				#print(xs)
-				map_plot.plot(xs,ys,color=color_,lw='1',alpha=1)
+				map_plot.plot(xs,ys,color=color_,lw='.2',alpha=1)
 		if type(geom) is Polygon:
 			xys = geom[0].coords
 			xs, ys = [],[]
 			for (x,y) in xys:
 				xs.append(x)
 				ys.append(y)
-			map_plot.plot(xs,ys,color=color_, lw='1',alpha=1)
+			map_plot.plot(xs,ys,color=color_, lw='.2',alpha=1)
 
 def update_map(results,map_plot, timestamp):
-	xs, ys = [],[]
-	for x in results.keys():
-		geom = results[x]["timestamp"][timestamp]
-		if(geom==True):
-			if(type(results[x]["poligono"][0][0]) is list):
-				for i in range(len(results[x]["poligono"][0])):
-					map_plot.plot(results[x]["poligono"][0][i],results[x]["poligono"][1][i],color='red',lw='1',alpha=1)
-			else:
-				map_plot.plot(results[x]["poligono"][0],results[x]["poligono"][1],color='red',lw='1',alpha=1)
-		elif(timestamp!=0 and results[x]["timestamp"][timestamp-1]==True):
-			if(type(results[x]["poligono"][0][0]) is list):
-				for i in range(len(results[x]["poligono"][0])):
-					map_plot.plot(results[x]["poligono"][0][i],results[x]["poligono"][1][i],color='black',lw='1',alpha=1)
-			else:
-				map_plot.plot(results[x]["poligono"][0],results[x]["poligono"][1],color='black',lw='1',alpha=1)
+    xs, ys = [],[]
+    for x in results.keys():
+        geom = results[x]["timestamp"][timestamp]
+        if(geom==True):
+            if(type(results[x]["poligono"][0][0]) is list):
+                for i in range(len(results[x]["poligono"][0])):
+                    map_plot.plot(results[x]["poligono"][0][i],results[x]["poligono"][1][i],color='red',lw='1',alpha=1)
+                else:
+                    map_plot.plot(results[x]["poligono"][0],results[x]["poligono"][1],color='red',lw='1',alpha=1)
+        elif(timestamp!=0 and results[x]["timestamp"][timestamp-1]==True):
+            if(type(results[x]["poligono"][0][0]) is list):
+                for i in range(len(results[x]["poligono"][0])):
+                    map_plot.plot(results[x]["poligono"][0][i],results[x]["poligono"][1][i],color='black',lw='1',alpha=1)
+            else:
+                map_plot.plot(results[x]["poligono"][0],results[x]["poligono"][1],color='black',lw='1',alpha=1)
+
 def distritos_infetados(infected, OFFSETS, cursor_psql):
 	cursor_psql.execute('''SELECT distrito,st_union(proj_boundary) FROM cont_aad_caop2018 GROUP BY distrito''')
 	dist={}
